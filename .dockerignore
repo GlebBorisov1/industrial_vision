@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.idea/
+.vscode/
+data/
+models/
+logs/
+events/
+datasets/
+.gitignore
