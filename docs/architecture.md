@@ -1,3 +1,4 @@
+```mermaid
 flowchart TD
 A[Camera / Video] --> B[Video Capture]
 B --> C[Preprocessing]
@@ -17,3 +18,4 @@ M --> M2[CPU / GPU / RAM]
 M --> M3[Temperature]
 M --> M4[FPS / Latency]
 M --> M5[Errors / Logs]
+```
