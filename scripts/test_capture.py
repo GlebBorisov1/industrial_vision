@@ -1,4 +1,3 @@
-# scripts/test_capture.py
 import sys
 import os
 import yaml
@@ -16,7 +15,7 @@ def main():
     setup_logger()
     logger = logging.getLogger("test_capture")
 
-    # 1. Читаем конфиг
+    #  Читаем конфиг
     config_path = "configs/configuration.yaml"
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -26,7 +25,6 @@ def main():
 
     logger.info(f"Запуск теста. Источник: {source_path}")
 
-    # 2. Инициализируем классы
     video = VideoSource(source=source_path, reconnect_sec=reconnect_sec)
     fps_meter = FPSMeter(window=30)
 
@@ -38,23 +36,19 @@ def main():
 
     frame_count = 0
 
-    # 3. Цикл обработки
     try:
         while True:
             frame = video.read()
             current_fps = fps_meter.tick()
             frame_count += 1
 
-            # Раз в 30 кадров выводим статистику в консоль
             if frame_count % 30 == 0:
                 logger.info(f"Обработано кадров: {frame_count}. Текущий FPS: {current_fps:.2f}")
 
-            # Сохраняем один кадр для визуальной проверки
             if frame_count == 10:
                 cv2.imwrite("data/test_frame.jpg", frame)
                 logger.info("Тестовый кадр сохранен в data/test_frame.jpg")
 
-            # Ограничиваем цикл для теста (например, 300 кадрами, чтобы не висело вечно)
             if frame_count >= 300:
                 logger.info("Достигнут лимит кадров (300). Завершение теста.")
                 break
