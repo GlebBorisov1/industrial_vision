@@ -11,3 +11,6 @@ data/
 models/
 .idea/
 .vscode/
+datasets/
+runs/
+*.cache

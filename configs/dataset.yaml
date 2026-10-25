@@ -1,0 +1,11 @@
+# Документация структуры датасета PPE
+path: datasets/ppe_test_only
+train: test/images  # фиктивно, т.к. обучение проводилось в Colab
+val: test/images
+test: test/images
+
+nc: 3
+names:
+  0: helmet
+  1: head
+  2: vest

@@ -12,5 +12,6 @@ services:
       - ./events:/app/events
       - ./tests:/app/tests
       - ./scripts:/app/scripts
+      - ./datasets:/app/datasets
     ports:
       - "8000:8000"   # для FastAPI на Этапе 9
