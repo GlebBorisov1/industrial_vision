@@ -1,0 +1,15 @@
+tracker_type: botsort
+
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+match_thresh: 1.1
+fuse_score: True
+
+track_buffer: 60
+
+gmc_method: sparseOptFlow
+
+with_reid: True
+proximity_thresh: 0.5
+appearance_thresh: 0.8

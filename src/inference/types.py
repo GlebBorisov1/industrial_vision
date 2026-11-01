@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class Detection:
@@ -9,3 +10,4 @@ class Detection:
     y1: int
     x2: int
     y2: int
+    track_id: Optional[int] = None

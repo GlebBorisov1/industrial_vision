@@ -1,6 +1,6 @@
 camera:
   id: "cam_01"
-  source: "data/test_video.mp4"
+  source: "data/test_video_1.mp4"
   reconnect_sec: 2.0
 
 models:
@@ -10,4 +10,16 @@ models:
 
 zones:
   restricted_01:
-    points: []
+    points:
+      - [0.50, 0.10]
+      - [0.95, 0.10]
+      - [0.95, 0.95]
+      - [0.50, 0.95]
+
+events:
+  person_in_zone:
+    enabled: true
+    confidence: 0.50
+    temporal_n: 5
+    temporal_m: 8
+    cooldown_sec: 10
