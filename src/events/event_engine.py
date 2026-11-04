@@ -2,7 +2,7 @@ from __future__ import annotations
 import time
 import logging
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -20,87 +20,107 @@ class Event:
     coordinates: dict
     snapshot: str | None = None
     status: str = "new"
+    extra: dict | None = None
 
 
 class TemporalConfirm:
-    """N из M: событие подтверждается, если условие выполнено >= N раз в последних M кадрах."""
+    """N из M подтверждений в скользящем окне."""
 
     def __init__(self, n: int, m: int):
         if n > m:
             raise ValueError("n не может быть больше m")
         self.n = n
+        self.m = m
         self.window: deque[bool] = deque(maxlen=m)
 
     def update(self, detected: bool) -> bool:
         self.window.append(bool(detected))
-        # Событие формируется только когда окно заполнено
-        return len(self.window) == self.window.maxlen and sum(self.window) >= self.n
+        return len(self.window) == self.m and sum(self.window) >= self.n
 
     def reset(self) -> None:
         self.window.clear()
 
 
 class EventEngine:
-    def __init__(self, camera_id: str, temporal_n: int = 5, temporal_m: int = 8,
-                 cooldown_sec: float = 10.0):
+    """
+    Универсальный движок событий.
+    Хранит состояние (confirmer + cooldown + active flag) по ключу (track_id, event_type).
+    """
+
+    def __init__(self, camera_id: str,
+                 configs: dict[str, dict]):
+        """
+        :param camera_id: идентификатор камеры
+        :param configs: словарь {event_type: {"temporal_n", "temporal_m", "cooldown_sec"}}
+        """
         self.camera_id = camera_id
-        self.temporal_n = temporal_n
-        self.temporal_m = temporal_m
-        self.cooldown_sec = cooldown_sec
-        # Храним состояние по каждому Track ID
-        self._confirmers: dict[int, TemporalConfirm] = {}
-        self._last_event_ts: dict[int, float] = {}
-        self._active_zone: dict[int, bool] = {}
+        self.configs = configs
+        self._confirmers: dict[tuple[int | None, str], TemporalConfirm] = {}
+        self._last_event_ts: dict[tuple[int | None, str], float] = {}
+        self._active: dict[tuple[int | None, str], bool] = {}
 
-    def _get_confirmer(self, track_id: int) -> TemporalConfirm:
-        if track_id not in self._confirmers:
-            self._confirmers[track_id] = TemporalConfirm(self.temporal_n, self.temporal_m)
-        return self._confirmers[track_id]
+    def _conf(self, event_type: str) -> dict:
+        if event_type not in self.configs:
+            raise KeyError(f"Нет конфигурации для события '{event_type}'")
+        return self.configs[event_type]
 
-    def _in_cooldown(self, track_id: int) -> bool:
-        last = self._last_event_ts.get(track_id)
-        return last is not None and (time.time() - last) < self.cooldown_sec
+    def _get_confirmer(self, key: tuple[int | None, str]) -> TemporalConfirm:
+        if key not in self._confirmers:
+            c = self._conf(key[1])
+            self._confirmers[key] = TemporalConfirm(c["temporal_n"], c["temporal_m"])
+        return self._confirmers[key]
 
-    def update(self, track_id: int, in_zone: bool, confidence: float,
-               point: tuple[int, int]) -> Event | None:
+    def _in_cooldown(self, key: tuple[int | None, str]) -> bool:
+        last = self._last_event_ts.get(key)
+        if last is None:
+            return False
+        return (time.time() - last) < self._conf(key[1])["cooldown_sec"]
+
+    def update(self, event_type: str, condition_met: bool, *,
+               track_id: int | None = None,
+               confidence: float = 0.0,
+               coordinates: dict | None = None,
+               extra: dict | None = None) -> Event | None:
         """
-        Вызывается на каждом кадре для каждого объекта person в зоне.
-        Возвращает Event, если он должен быть сгенерирован.
+        Вызывается каждый кадр для каждого объекта/условия.
+        Возвращает Event по фронту (False → True) после temporal confirmation и с учётом cooldown.
         """
-        confirmer = self._get_confirmer(track_id)
-        confirmed = confirmer.update(in_zone)
+        key = (track_id, event_type)
+        confirmer = self._get_confirmer(key)
+        confirmed = confirmer.update(condition_met)
 
-        # Событие только по фронту (переход False → True) + cooldown
-        if confirmed and not self._active_zone.get(track_id, False):
-            self._active_zone[track_id] = True
-            if self._in_cooldown(track_id):
-                logger.debug(f"Track {track_id}: cooldown, событие подавлено.")
+        if confirmed and not self._active.get(key, False):
+            self._active[key] = True
+            if self._in_cooldown(key):
+                logger.debug(f"Cooldown для {event_type} track={track_id} — событие подавлено.")
                 return None
 
             event = Event(
                 event_id=str(uuid4()),
-                event_type="person_in_restricted_zone",
+                event_type=event_type,
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 camera_id=self.camera_id,
                 confidence=float(confidence),
                 track_id=track_id,
-                coordinates={"x": int(point[0]), "y": int(point[1])},
+                coordinates=coordinates or {},
+                extra=extra,
             )
-            self._last_event_ts[track_id] = time.time()
-            logger.info(f"[EVENT] {event.event_type} track_id={track_id} "
-                        f"conf={confidence:.2f} at {point}")
+            self._last_event_ts[key] = time.time()
+            logger.info(f"[EVENT] {event_type} track={track_id} conf={confidence:.2f}")
             return event
 
-        # Объект вышел из зоны — сбрасываем состояние
-        if not in_zone:
-            self._active_zone[track_id] = False
+        # Условие больше не выполняется — сбрасываем фронт
+        if not condition_met:
+            self._active[key] = False
             confirmer.reset()
 
         return None
 
     def cleanup(self, active_track_ids: set[int]) -> None:
-        """Удаляет состояния для треков, которые пропали из кадра."""
-        for tid in list(self._confirmers.keys()):
-            if tid not in active_track_ids:
-                del self._confirmers[tid]
-                self._active_zone.pop(tid, None)
+        """Удаляет состояние для треков, которых нет в кадре."""
+        for key in list(self._confirmers.keys()):
+            track_id, _ = key
+            if track_id is not None and track_id not in active_track_ids:
+                del self._confirmers[key]
+                self._active.pop(key, None)
+                # _last_event_ts оставляем — cooldown должен пережить короткое исчезновение

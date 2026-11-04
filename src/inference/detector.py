@@ -18,7 +18,7 @@ class Detector:
             raise
 
     def predict(self, frame) -> list[Detection]:
-        result = self.model.predict(frame, conf=self.confidence, verbose=False)[0]
+        result = self.model.predict(frame, conf=self.confidence, imgsz=480, verbose=False)[0]
         names = result.names
         detections: list[Detection] = []
 

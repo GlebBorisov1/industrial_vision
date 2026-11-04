@@ -7,9 +7,9 @@ def main():
     setup_logger()
     logger = logging.getLogger("validate")
 
-    data_yaml = "/app/datasets/ppe_test_only/data.yaml"
-    weights_ppe = "models/ppe_yolo26n_best.pt"
-    weights_baseline = "models/yolov8n.pt"  # скачается автоматически (COCO)
+    data_yaml = "configs/dataset.yaml"
+    weights_ppe = "models/ppe_yolo26n_best_openvino_model/"
+    weights_baseline = "models/yolov8n_openvino_model"
 
     logger.info("=== Валидация YOLO26n (PPE) на test split ===")
     model_26 = YOLO(weights_ppe)

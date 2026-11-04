@@ -1,11 +1,14 @@
 camera:
   id: "cam_01"
-  source: "data/test_video_1.mp4"
+  source: "data/ppe_test.mp4"
   reconnect_sec: 2.0
 
 models:
-  detector_path: "models/yolov8n.pt"
+  detector_path: "models/yolov8n_openvino_model/"
   person_confidence: 0.50
+  ppe_model_path: "models/ppe_yolo26n_best_openvino_model/"
+  ppe_confidence: 0.50
+  ppe_skip: 2
   fire_confidence: 0.65
 
 zones:
@@ -16,6 +19,12 @@ zones:
       - [0.95, 0.95]
       - [0.50, 0.95]
 
+ppe:
+  min_person_height: 120
+  helmet_classes: ["helmet", "head"]
+  vest_class: "vest"
+  bbox_padding: 0.10
+
 events:
   person_in_zone:
     enabled: true
@@ -23,3 +32,15 @@ events:
     temporal_n: 5
     temporal_m: 8
     cooldown_sec: 10
+
+  ppe_helmet_missing:
+     enabled: true
+     temporal_n: 5
+     temporal_m: 8
+     cooldown_sec: 30
+
+  ppe_vest_missing:
+     enabled: true
+     temporal_n: 5
+     temporal_m: 8
+     cooldown_sec: 30
