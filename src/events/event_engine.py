@@ -89,7 +89,7 @@ class EventEngine:
         confirmer = self._get_confirmer(key)
         confirmed = confirmer.update(condition_met)
 
-        if confirmed and not self._active.get(key, False):
+        if confirmed and condition_met and not self._active.get(key, False):
             self._active[key] = True
             if self._in_cooldown(key):
                 logger.debug(f"Cooldown для {event_type} track={track_id} — событие подавлено.")

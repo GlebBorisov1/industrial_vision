@@ -9,7 +9,15 @@ models:
   ppe_model_path: "models/ppe_yolo26n_best_openvino_model/"
   ppe_confidence: 0.50
   ppe_skip: 2
-  fire_confidence: 0.65
+  fire_model_path: "models/fire_detection/fire-smoke.pt"
+  fire_confidence: 0.30
+  smoke_confidence: 0.35
+
+smoke_fire:
+  # Минимальная площадь детекции в пикселях^2 — фильтр от мелких ложных срабатываний
+  min_area_px: 2000
+  # Опциональный фильтр по соотношению сторон (сварка часто узкая и яркая)
+  max_aspect_ratio: 5.0
 
 zones:
   restricted_01:
@@ -44,3 +52,14 @@ events:
      temporal_n: 5
      temporal_m: 8
      cooldown_sec: 30
+
+  smoke_detected:
+    enabled: true
+    temporal_n: 3
+    temporal_m: 5
+    cooldown_sec: 20
+  fire_detected:
+    enabled: true
+    temporal_n: 2
+    temporal_m: 3
+    cooldown_sec: 15

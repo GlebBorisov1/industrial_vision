@@ -15,6 +15,7 @@ from src.zones.geometry import (bottom_center, denormalize_polygon,
 from src.events.event_engine import EventEngine
 import logging
 
+EVENT_TYPE = "person_in_restricted_zone"
 
 def main():
     setup_logger()
@@ -36,12 +37,12 @@ def main():
         confidence=mod["person_confidence"],
         tracker_cfg="configs/bytetrack_custom.yaml"
     )
-    engine = EventEngine(
-        camera_id=cam["id"],
-        temporal_n=ev_cfg["temporal_n"],
-        temporal_m=ev_cfg["temporal_m"],
-        cooldown_sec=ev_cfg["cooldown_sec"],
-    )
+    event_configs = {EVENT_TYPE: ev_cfg}
+
+    def make_engine() -> EventEngine:
+        return EventEngine(camera_id=cam["id"], configs=event_configs)
+
+    engine = make_engine()
     fps_meter = FPSMeter(window=30)
 
     video.open()
@@ -56,12 +57,7 @@ def main():
             if frame is None:
                 if video.is_file:
                     video.rewind()
-                    engine = EventEngine(  # сброс состояния при зацикливании
-                        camera_id=cam["id"],
-                        temporal_n=ev_cfg["temporal_n"],
-                        temporal_m=ev_cfg["temporal_m"],
-                        cooldown_sec=ev_cfg["cooldown_sec"],
-                    )
+                    engine = make_engine()
                     continue
                 break
 
@@ -93,7 +89,13 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
 
                 # Event Engine
-                event = engine.update(det.track_id, in_zone, det.confidence, pt)
+                event = engine.update(
+                    EVENT_TYPE,
+                    in_zone,
+                    track_id=det.track_id,
+                    confidence=det.confidence,
+                    coordinates={"x": int(pt[0]), "y": int(pt[1])},
+                )
                 if event is not None:
                     events_log.append(event)
 
