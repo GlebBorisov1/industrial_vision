@@ -12,10 +12,13 @@
 - Детекции людей и транспорта (baseline-модель).
 - Контроля средств индивидуальной защиты (СИЗ): каска и жилет.
 - Детекция дыма и огня — модель fire-smoke (YOLOv8n), с фильтрацией hard negatives.
+- Детекция разлива — два подхода: segmentation (`kareem1232/spill_leak_detection_nano`) и HSV-эвристика.
 - Tracking объектов (ByteTrack) с устойчивыми Track ID при окклюзиях.
 - ROI-аналитика: полигон запретной зоны в нормированных координатах.
 - Event Engine: универсальный движок событий с temporal confirmation и cooldown.
-- Генерация событий `person_in_restricted_zone`, `ppe_helmet_missing`, `ppe_vest_missing`, `smoke_detected`, `fire_detected`.
+- Генерация событий `person_in_restricted_zone`, `ppe_helmet_missing`, `ppe_vest_missing`, `smoke_detected`, `fire_detected`, `spill_detected`.
+- Сохранение событий в `events/YYYY/MM/DD/<uuid>/` (JSON + snapshot).
+- Логирование с ротацией: 4 раздельных журнала (application, ai_events, camera_errors, system_monitor).
 - Оптимизация инференса через OpenVINO для Edge-инференса на CPU.
 
 ## 🏗 Архитектура
@@ -35,9 +38,12 @@
 | Язык (локальный venv) | Python 3.10+ (проверено на 3.12) |
 | Детекция объектов | Ultralytics (YOLOv8n, YOLO26n) |
 | Детекция дыма/огня | fire-smoke YOLOv8n (rabahdev) |
+| Сегментация разлива | spill_leak_detection_nano (kareem1232) |
 | Оптимизация инференса | OpenVINO (FP16, `imgsz=480`) |
 | Tracking | ByteTrack |
 | Обработка видео   | OpenCV                         |
+| Хранение событий | JSON + JPEG snapshot на диске |
+| Логирование | `logging` + `RotatingFileHandler` (4 журнала) |
 | REST API          | FastAPI + Uvicorn              |
 | Тестирование      | pytest                         |
 | Конфигурация      | YAML                           |
@@ -56,7 +62,12 @@ industrial-vision/
 │   ├── dataset_card.md            # Карта набора данных
 │   └── model_card.md              # Карта модели
 ├── events/
+│   └── YYYY/MM/DD/<uuid>/
 ├── logs/
+│   ├── application.log
+│   ├── ai_events.log
+│   ├── camera_errors.log
+│   └── system_monitor.log
 ├── models/                        # Веса моделей (не коммитятся, скачиваются отдельно)
 │   ├── ppe_yolo26n_best.pt
 │   └── yolov8n.pt
@@ -68,17 +79,21 @@ industrial-vision/
 │   ├── test_tracking_roi.py       # Демонстрация Tracking + ROI + Event Engine
 │   ├── test_ppe.py                # Контроль СИЗ (helmet/vest)
 │   ├── test_smoke_fire.py         # Дым и огонь
+│   ├── test_spill.py              # Разлив (HSV-эвристика)
+│   ├── test_spill_seg.py          # Разлив (segmentation)
 │   ├── tune_confidence.py         # Подбор порога (3 прогона val)
 │   └── validate_models.py
 ├── src/                           # Исходный код
 │   ├── analytics/                 # Аналитика
 │   │   ├── ppe_checker.py         # Логика проверки СИЗ
+│   │   ├── spill_detector.py      # HSV-эвристика для разлива
 │   │   └── smoke_fire_filter.py   # Фильтрация hard negatives
 │   ├── api/                       # REST API
 │   ├── capture/                   # Захват видео, FPS, reconnect
 │   │   ├── fps_meter.py
 │   │   └── video_capture.py
 │   ├── events/                    # Event Engine
+│   │   ├── storage.py             # Сохранение JSON + snapshot
 │   │   └── event_engine.py
 │   ├── inference/                 # Обёртка над Ultralytics (Detector)
 │   │   ├── detector.py
@@ -132,7 +147,7 @@ docker compose run --rm vision-app python scripts/benchmark_speed.py
 
 ## 🧠 Модели
 
-<table><thead><tr><th><span class="">Модель</span></th><th><span class="">Задача</span></th><th><span class="">Классы</span></th><th><span class="">Статус</span></th></tr></thead><tbody><tr><td><strong><span class="">YOLOv8n (COCO)</span></strong></td><td><span class="">Детекция людей и транспорта</span></td><td><code>person</code><span class="">, </span><code>car</code><span class="">, </span><code>truck</code><span class="">, </span><code>bus</code><span class="">, </span><code>motorcycle</code></td><td><span class="">✅ Интегрирована, экспортирована в OpenVINO</span></td></tr><tr><td><strong><span class="">YOLO26n (fine-tuned)</span></strong></td><td><span class="">Контроль СИЗ</span></td><td><code>helmet</code><span class="">, </span><code>head</code><span class="">, </span><code>vest</code></td><td><span class="">✅ Обучена, валидирована, экспортирована в OpenVINO</span></td></tr><tr><td><strong><span class="">fire-smoke YOLOv8n</span></strong></td><td><span class="">Детекция дыма и огня</span></td><td><code>smoke</code><span class="">, </span><code>fire</code></td><td><span class="">✅ Интегрирована (источник: </span><code>rabahdev/fire-smoke-yolov8n</code><span class="">)</span></td></tr></tbody></table>
+<table><thead><tr><th><span class="">Модель</span></th><th><span class="">Задача</span></th><th><span class="">Классы</span></th><th><span class="">Статус</span></th></tr></thead><tbody><tr><td><strong><span class="">YOLOv8n (COCO)</span></strong></td><td><span class="">Детекция людей и транспорта</span></td><td><code>person</code><span class="">, </span><code>car</code><span class="">, </span><code>truck</code><span class="">, </span><code>bus</code><span class="">, </span><code>motorcycle</code></td><td><span class="">✅ Интегрирована, экспортирована в OpenVINO</span></td></tr><tr><td><strong><span class="">YOLO26n (fine-tuned)</span></strong></td><td><span class="">Контроль СИЗ</span></td><td><code>helmet</code><span class="">, </span><code>head</code><span class="">, </span><code>vest</code></td><td><span class="">✅ Обучена, валидирована, экспортирована в OpenVINO</span></td></tr><tr><td><strong><span class="">fire-smoke YOLOv8n</span></strong></td><td><span class="">Детекция дыма и огня</span></td><td><code>smoke</code><span class="">, </span><code>fire</code></td><td><span class="">✅ Интегрирована (источник: </span><code>rabahdev/fire-smoke-yolov8n</code><span class="">)</span></td></tr></tbody><tr><td><strong><span class="">spill_leak_detection_nano</span></strong></td><td><span class="">Сегментация разлива</span></td><td><code>oil</code></td><td><code>kareem1232/spill_leak_detection_nano</code></td><td><span class="">✅ Интегрирована</span></td></tr></table>
 
 ### Метрики YOLO26n (PPE) — PyTorch vs OpenVINO
 
@@ -160,6 +175,7 @@ docker compose run --rm vision-app python scripts/benchmark_speed.py
     YOLO("models/yolov8n.pt").export(format="openvino", imgsz=480)
     YOLO("models/ppe_yolo26n_best.pt").export(format="openvino", imgsz=480)
     ```
+- `models/spill_seg/weights/best.pt` — скачивается автоматически в test_spill_seg.py
 
 ## 🎯 Tracking (Этап 5)
 
@@ -216,6 +232,55 @@ fuse_score: True
 ### Temporal confirmation и latency
 <table><thead><tr><th><span class="">Событие</span></th><th><span class="">N/M</span></th><th><span class="">Latency (факт)</span></th><th><span class="">Цель</span></th></tr></thead><tbody><tr><td><code>smoke_detected</code></td><td><span class="">3/5</span></td><td><strong><span class="">0.34 с</span></strong></td><td><span class="">≤ 5 с ✅</span></td></tr><tr><td><code>fire_detected</code></td><td><span class="">2/3</span></td><td><strong><span class="">0.64 с</span></strong></td><td><span class="">≤ 5 с ✅</span></td></tr></tbody></table>
 
+## 🌊 Детекция разлива (Этап 8)
+Реализованы **два подхода** — исследовательский сценарий по методичке:
+
+### Подход A: Segmentation (основной)
+- **Модель:** `kareem1232/spill_leak_detection_nano` (YOLO-seg, класс `{0: 'oil'}`).
+- **Загрузка:** автоматически через `hf_hub_download` при первом запуске `test_spill_seg.py`.
+- **Плюсы:** точные маски (не bbox), площадь пятна по реальной форме, меньше FP на тенях.
+- **Минусы:** ~7-10 FPS на CPU, только нефтепродукты (oil).
+- **Запуск:** `python scripts/test_spill_seg.py`.
+
+### Подход B: HSV-эвристика (fallback)
+- **Модуль:** `src/analytics/spill_detector.py`.
+- **Принцип:** `cv2.inRange` по HSV + морфология + фильтр по площади/соотношению сторон.
+- **Параметры по умолчанию:** `hsv_low=[0,0,20]`, `hsv_high=[180,80,90]`, `min_area_px=5000`.
+- **Плюсы:** ~50 FPS на CPU, работает на любых тёмных жидкостях.
+- **Минусы:** bbox (не маска), FP на тенях и тёмных поверхностях, **требует калибровки под сцену**.
+- **Запуск:** `python scripts/test_spill.py`.
+
+## 📦 Хранение событий и логирование (Этап 8)
+### EventStorage
+События сохраняются в структуре (src/events/storage.py):
+
+```text
+events/2026/11/08/<event_uuid>/
+├── event.json
+└── snapshot.jpg
+```
+Пример `event.json`:
+```json
+{
+  "event_id": "3a5c8e1f-...",
+  "event_type": "ppe_helmet_missing",
+  "timestamp": "2026-11-08T14:22:10.123+00:00",
+  "camera_id": "cam_01",
+  "confidence": 0.87,
+  "track_id": 3,
+  "coordinates": {"x": 420, "y": 380},
+  "snapshot": "events/2026/11/08/3a5c8e1f-.../snapshot.jpg",
+  "status": "new",
+  "extra": null
+}
+```
+
+Для smoke/fire в поле `extra` сохраняется `latency_sec`, для spill — `mask_area_px`.
+
+### Логирование
+4 журнала с ротацией (5 МБ × 5 = не более 30 МБ на файл):
+
+<table><thead><tr><th><span class="">Журнал</span></th><th><span class="">Уровень</span></th><th><span class="">Содержимое</span></th></tr></thead><tbody><tr><td><code>application.log</code></td><td><span class="">INFO+</span></td><td><span class="">Общий поток приложения</span></td></tr><tr><td><code>ai_events.log</code></td><td><span class="">INFO+</span></td><td><span class="">Только сгенерированные AI-события</span></td></tr><tr><td><code>camera_errors.log</code></td><td><span class="">WARNING+</span></td><td><span class="">Ошибки камеры/потока</span></td></tr><tr><td><code>system_monitor.log</code></td><td><span class="">INFO+</span></td><td><span class="">FPS, latency, ресурсы (Этап 9)</span></td></tr></tbody></table>
 
 ## 🎯 Подбор confidence threshold
 
@@ -324,6 +389,15 @@ smoke_fire:
   min_area_px: 2000              # ~45×45 px — фильтр мелких ложных детекций
   max_aspect_ratio: 5.0          # фильтр вытянутых бликов/сварки
 
+spill:
+  approach: "segmentation"
+  confidence: 0.40
+  min_area_px: 3000
+  
+  max_aspect_ratio: 6.0
+  hsv_low: [0, 0, 20]
+  hsv_high: [180, 80, 90]
+
 
 zones:
   restricted_01:
@@ -366,10 +440,15 @@ events:
     temporal_n: 2
     temporal_m: 3
     cooldown_sec: 15
+  spill_detected:
+      enabled: true
+      temporal_n: 3
+      temporal_m: 5
+      cooldown_sec: 30
 ```
 
 Секреты (пароли RTSP и т.п.) **не хранятся в репозитории** — используйте переменные окружения или локальный `.env` (добавлен в `.gitignore`).
 
 ## 🗺 Дорожная карта
 
-<table><thead><tr><th><span class="">Этап</span></th><th><span class="">Тема</span></th><th><span class="">Статус</span></th></tr></thead><tbody><tr><td><span class="">1</span></td><td><span class="">Архитектура, Git, Docker-окружение</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">2</span></td><td><span class="">Видеопоток, FPS, reconnect</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">3</span></td><td><span class="">Baseline-детектор (YOLOv8n, COCO)</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">4</span></td><td><span class="">Датасет PPE и обучение YOLO26n</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">5</span></td><td><span class="">Tracking, ROI и Event Logic</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">6</span></td><td><span class="">Контроль СИЗ (логика нарушений)</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">7</span></td><td><span class="">Детекция дыма и огня</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">8</span></td><td><span class="">Event Engine, JSON, evidence, logging</span></td><td><span class="">🚧 В разработке</span></td></tr><tr><td><span class="">9</span></td><td><span class="">REST API, Edge AI, benchmark</span></td><td><span class="">⏳</span></td></tr><tr><td><span class="">10</span></td><td><span class="">Системные испытания и защита</span></td><td><span class="">⏳</span></td></tr></tbody></table>
+<table><thead><tr><th><span class="">Этап</span></th><th><span class="">Тема</span></th><th><span class="">Статус</span></th></tr></thead><tbody><tr><td><span class="">1</span></td><td><span class="">Архитектура, Git, Docker-окружение</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">2</span></td><td><span class="">Видеопоток, FPS, reconnect</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">3</span></td><td><span class="">Baseline-детектор (YOLOv8n, COCO)</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">4</span></td><td><span class="">Датасет PPE и обучение YOLO26n</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">5</span></td><td><span class="">Tracking, ROI и Event Logic</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">6</span></td><td><span class="">Контроль СИЗ (логика нарушений)</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">7</span></td><td><span class="">Детекция дыма и огня</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">8</span></td><td><span class="">Event Engine, JSON, evidence, logging</span></td><td><span class="">✅</span></td></tr><tr><td><span class="">9</span></td><td><span class="">REST API, Edge AI, benchmark</span></td><td><span class="">🚧 В разработке</span></td></tr><tr><td><span class="">10</span></td><td><span class="">Системные испытания и защита</span></td><td><span class="">⏳</span></td></tr></tbody></table>

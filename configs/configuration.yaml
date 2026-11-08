@@ -1,6 +1,6 @@
 camera:
   id: "cam_01"
-  source: "data/ppe_test.mp4"
+  source: "data/spill/oil_spill.mp4"
   reconnect_sec: 2.0
 
 models:
@@ -33,6 +33,14 @@ ppe:
   vest_class: "vest"
   bbox_padding: 0.10
 
+spill:
+  enabled: true
+  min_area_px: 5000         # ~70×70 px — соответствует пятну ~0,5 м² в средней перспективе
+  max_aspect_ratio: 6.0
+  confidence: 0.70
+  hsv_low: [0, 0, 20]       # низкая насыщенность, тёмная яркость
+  hsv_high: [180, 80, 90]
+
 events:
   person_in_zone:
     enabled: true
@@ -58,8 +66,15 @@ events:
     temporal_n: 3
     temporal_m: 5
     cooldown_sec: 20
+
   fire_detected:
     enabled: true
     temporal_n: 2
     temporal_m: 3
     cooldown_sec: 15
+
+  spill_detected:
+      enabled: true
+      temporal_n: 3
+      temporal_m: 5
+      cooldown_sec: 30

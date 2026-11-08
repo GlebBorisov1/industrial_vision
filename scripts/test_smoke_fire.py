@@ -7,11 +7,13 @@ import cv2
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.logging.logger_setup import setup_logger
+from src.logging.logger_setup import get_event_logger
 from src.capture.video_capture import VideoSource
 from src.capture.fps_meter import FPSMeter
 from src.inference.detector import Detector
 from src.analytics.smoke_fire_filter import filter_smoke_fire
 from src.events.event_engine import EventEngine
+from src.events.storage import EventStorage
 import logging
 
 
@@ -43,8 +45,10 @@ def main():
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
 
     events_log = []
-    # Для измерения latency: словарь "первое появление признака" → timestamp
+    # Для измерения latency: словарь "первое появление признака" -> timestamp
     first_seen: dict[str, float] = {}
+    storage = EventStorage(base_dir="events")
+    event_log = get_event_logger()
 
     try:
         while True:
@@ -114,10 +118,14 @@ def main():
                 if ev is None:
                     continue
                 events_log.append(ev)
-                # latency от первого появления признака до события
                 latency = now - first_seen.get(ev.event_type, now)
                 logger.info(f"[EVENT] {ev.event_type} conf={ev.confidence:.2f} "
                             f"latency={latency:.2f}s")
+                event_log.info(
+                    f"{ev.event_type} conf={ev.confidence:.2f} latency={latency:.2f}s"
+                )
+                ev.extra = {"latency_sec": round(latency, 3)}
+                storage.save(ev, frame=frame)
 
             # HUD
             fps = fps_meter.tick()

@@ -6,12 +6,14 @@ import cv2
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.logging.logger_setup import setup_logger
+from src.logging.logger_setup import get_event_logger
 from src.capture.video_capture import VideoSource
 from src.capture.fps_meter import FPSMeter
 from src.inference.detector import Detector
 from src.tracking.tracker import Tracker
 from src.analytics.ppe_checker import check_ppe_for_person
 from src.events.event_engine import EventEngine
+from src.events.storage import EventStorage
 import logging
 
 
@@ -95,6 +97,9 @@ def main():
 
     PPE_SKIP = int(mod.get("ppe_skip", 2))
     ppe_cache: list = None     # кэш последних PPE-детекций
+    storage = EventStorage(base_dir="events")
+    event_log = get_event_logger()
+
     try:
         while True:
             frame = video.read()
@@ -144,7 +149,10 @@ def main():
                         confidence=result.helmet_confidence,
                         coordinates={"x": (person.x1 + person.x2) // 2, "y": person.y2},
                     )
-                    if ev: events_log.append(ev)
+                    if ev is not None:
+                        events_log.append(ev)
+                        event_log.info(f"{ev.event_type} track={ev.track_id} conf={ev.confidence:.2f}")
+                        storage.save(ev, frame=frame)
                 else:
                     engine.update("ppe_helmet_missing", condition_met=False,
                                   track_id=person.track_id)
@@ -158,7 +166,10 @@ def main():
                         confidence=result.vest_confidence,
                         coordinates={"x": (person.x1 + person.x2) // 2, "y": person.y2},
                     )
-                    if ev: events_log.append(ev)
+                    if ev is not None:
+                        events_log.append(ev)
+                        event_log.info(f"{ev.event_type} track={ev.track_id} conf={ev.confidence:.2f}")
+                        storage.save(ev, frame=frame)
                 else:
                     engine.update("ppe_vest_missing", condition_met=False,
                                   track_id=person.track_id)

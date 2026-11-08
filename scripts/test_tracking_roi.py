@@ -6,6 +6,7 @@ import cv2
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.logging.logger_setup import setup_logger
+from src.logging.logger_setup import get_event_logger
 from src.capture.video_capture import VideoSource
 from src.capture.fps_meter import FPSMeter
 from src.inference.detector import Detector
@@ -13,6 +14,7 @@ from src.tracking.tracker import Tracker
 from src.zones.geometry import (bottom_center, denormalize_polygon,
                                 point_in_polygon, draw_polygon)
 from src.events.event_engine import EventEngine
+from src.events.storage import EventStorage
 import logging
 
 EVENT_TYPE = "person_in_restricted_zone"
@@ -50,6 +52,8 @@ def main():
     cv2.namedWindow(window, cv2.WINDOW_NORMAL)
 
     events_log = []
+    storage = EventStorage(base_dir="events")
+    event_log = get_event_logger()
 
     try:
         while True:
@@ -98,6 +102,8 @@ def main():
                 )
                 if event is not None:
                     events_log.append(event)
+                    event_log.info(f"{event.event_type} track={event.track_id} conf={event.confidence:.2f}")
+                    storage.save(event, frame=frame)   # frame — это текущий кадр
 
             engine.cleanup(active_ids)
 
